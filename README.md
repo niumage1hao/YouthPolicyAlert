@@ -48,7 +48,7 @@
 ### 第一步：先做一次体检（强烈建议）
 
 ```bash
-git clone https://github.com/YourUsername/YouthPolicyAlert.git
+git clone https://github.com/niumage1hao/YouthPolicyAlert.git
 cd YouthPolicyAlert
 pip install -r requirements.txt
 
