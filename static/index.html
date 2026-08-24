@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouthPolicyAlert - 青年政策与安居福利监控平台</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef6ff',
+                            100: '#d9ecff',
+                            500: '#2563eb',
+                            600: '#1d4ed8',
+                            700: '#1e40af',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(229, 231, 235, 0.8);
+        }
+        .card-hover {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card-hover:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 24px -8px rgba(37, 99, 235, 0.12);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+    <div id="app" class="flex flex-col min-h-screen">
+
+        <!-- 顶部导航栏 -->
+        <header class="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20 font-bold text-xl">
+                            🏠
+                        </div>
+                        <div>
+                            <span class="text-lg font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent">
+                                青年安居与政策通
+                            </span>
+                            <span class="hidden sm:inline-block ml-2 px-2 py-0.5 text-xs font-semibold bg-blue-50 text-blue-600 rounded-full border border-blue-100">
+                                Open Source v1.0
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- 顶部快捷操作 -->
+                    <div class="flex items-center space-x-4">
+                        <div class="hidden md:flex items-center space-x-6 text-sm text-slate-500">
+                            <span class="flex items-center"><span class="w-2 h-2 rounded-full mr-2 animate-pulse" :class="stats.broken_sources ? 'bg-amber-500' : 'bg-emerald-500'"></span>已监控 <b>{{ stats.total_policies }}</b> 条政策</span>
+                            <span>覆盖 <b>{{ stats.active_cities }}</b> 个城市</span>
+                            <span v-if="stats.pending" class="text-blue-600">待推送 <b>{{ stats.pending }}</b></span>
+                            <span v-if="stats.broken_sources" class="text-amber-600">⚠️ <b>{{ stats.broken_sources }}</b> 个数据源失效</span>
+                        </div>
+                        <button @click="triggerScan" :disabled="isScanning" class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 shadow-sm transition disabled:opacity-50">
+                            <svg v-if="isScanning" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                            <span v-if="!isScanning">⚡️ 立即全网扫描</span>
+                            <span v-else>正在扫描官方网站...</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主体区域 -->
+        <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+            <!-- 选项卡导航 -->
+            <div class="flex space-x-2 border-b border-slate-200 mb-6 pb-2">
+                <button @click="currentTab = 'feed'" :class="currentTab === 'feed' ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-600 hover:text-slate-900'" class="px-4 py-2 rounded-lg text-sm transition">
+                    📋 实时政策大厅
+                </button>
+                <button @click="currentTab = 'config'" :class="currentTab === 'config' ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-600 hover:text-slate-900'" class="px-4 py-2 rounded-lg text-sm transition">
+                    🔔 个人订阅与推送
+                </button>
+                <button @click="currentTab = 'playground'" :class="currentTab === 'playground' ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-600 hover:text-slate-900'" class="px-4 py-2 rounded-lg text-sm transition">
+                    🧪 规则实验室 (开源贡献)
+                </button>
+                <button @click="currentTab = 'status'; fetchHealth(); fetchPending();" :class="currentTab === 'status' ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-slate-600 hover:text-slate-900'" class="px-4 py-2 rounded-lg text-sm transition">
+                    🩺 运行状态
+                    <span v-if="stats.broken_sources" class="ml-1 px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-700 rounded-full">{{ stats.broken_sources }}</span>
+                </button>
+            </div>
+
+            <!-- TAB 1: 实时政策大厅 -->
+            <section v-if="currentTab === 'feed'">
+                <!-- 筛选与搜索工具条 -->
+                <div class="glass-panel p-4 rounded-xl shadow-sm mb-6 flex flex-col gap-4">
+                    <!-- 顶行：城市快速选择 -->
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-xs font-semibold text-slate-400 mr-1 flex items-center">📍 热门城市:</span>
+                        <button v-for="c in cities" :key="c" @click="selectedCity = c; searchQuery = ''; fetchPolicies()" :class="selectedCity === c ? 'bg-blue-600 text-white font-medium shadow-sm shadow-blue-500/20' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" class="px-3 py-1.5 rounded-lg text-xs transition">
+                            {{ c }}
+                        </button>
+                    </div>
+
+                    <!-- 底行：分类筛选 + 深度区域/关键词搜索 -->
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-400 shrink-0 font-medium">政策类型:</span>
+                            <select v-model="selectedCategory" @change="fetchPolicies" class="bg-slate-100 border border-slate-200 text-slate-700 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                                <option value="all">全部分类 (人才公寓/保租房/补贴)</option>
+                                <option value="housing">🏠 保租房 / 青年人才公寓</option>
+                                <option value="subsidy">💰 高校毕业生租房与生活补贴</option>
+                            </select>
+                        </div>
+
+                        <!-- 区域与关键词深度搜索框 -->
+                        <div class="relative flex-1 sm:max-w-md">
+                            <input v-model="searchQuery" @input="fetchPolicies" placeholder="🔍 搜索任意城市/区县 (如: 北京, 海淀, 杭州, 南山) 或关键词..." class="w-full bg-slate-100 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+                            <span class="absolute left-3 top-2.5 text-slate-400 text-xs">🔎</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 政策卡片网格 -->
+                <div v-if="loading" class="text-center py-20 text-slate-400">
+                    <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto mb-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+                    加载最新政策中...
+                </div>
+
+                <!-- 空状态智能引导 -->
+                <div v-else-if="policies.length === 0" class="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200 p-6">
+                    <div class="text-4xl mb-3">🧭</div>
+                    <h3 class="text-base font-bold text-slate-800">
+                        {{ searchQuery || (selectedCity !== '全部' ? selectedCity : '') ? `暂未发现【${searchQuery || selectedCity}】的本地缓存政策` : '当前分类暂无政策' }}
+                    </h3>
+                    <p class="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-5">
+                        本系统内置了全国重点城市官方住建与人社监控，您可以点击下方按钮，立即调度爬虫引擎在线抓取！
+                    </p>
+                    <button @click="triggerScanTarget(searchQuery || selectedCity)" :disabled="isScanning" class="inline-flex items-center px-4 py-2 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 shadow-sm transition disabled:opacity-50">
+                        <span v-if="!isScanning">⚡️ 立即对【{{ searchQuery || (selectedCity !== '全部' ? selectedCity : '全国') }}】执行官方专栏实时抓取</span>
+                        <span v-else>正在全网并发抓取中...</span>
+                    </button>
+                </div>
+
+                <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <div v-for="item in policies" :key="item.unique_id" class="bg-white rounded-xl border border-slate-200/80 p-5 flex flex-col justify-between card-hover shadow-sm relative overflow-hidden">
+                        <!-- 卡片顶栏 Badge -->
+                        <div>
+                            <div class="flex items-center justify-between gap-2 mb-2.5">
+                                <div class="flex items-center gap-1.5">
+                                    <span v-if="item.category === 'housing'" class="px-2 py-0.5 text-xs font-semibold bg-blue-50 text-blue-600 rounded">🏠 保租房 / 人才公寓</span>
+                                    <span v-else-if="item.category === 'subsidy'" class="px-2 py-0.5 text-xs font-semibold bg-emerald-50 text-emerald-600 rounded">💰 毕业生补贴 / 就业</span>
+                                    <span v-else class="px-2 py-0.5 text-xs font-semibold bg-purple-50 text-purple-600 rounded">🎓 青年政策</span>
+                                    <span class="px-2 py-0.5 text-xs bg-slate-100 text-slate-600 rounded font-medium">📍 {{ item.city }} · {{ item.district || '全市' }}</span>
+                                </div>
+                                <span class="text-xs text-slate-400 font-mono">{{ item.publish_date || '近期' }}</span>
+                            </div>
+
+                            <!-- 标题 -->
+                            <h3 class="text-sm font-bold text-slate-900 leading-snug line-clamp-2 mb-3">
+                                {{ item.title }}
+                            </h3>
+
+                            <!-- 干货要素 -->
+                            <div class="space-y-1.5 text-xs text-slate-600 mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                <div class="flex items-start">
+                                    <span class="text-slate-400 w-16 shrink-0">发布机构:</span>
+                                    <span class="font-medium text-slate-700 truncate">{{ item.source_name }}</span>
+                                </div>
+                                <div class="flex items-start">
+                                    <span class="text-slate-400 w-16 shrink-0">适合人群:</span>
+                                    <span class="text-slate-700">{{ item.target_audience || '详见官方公告' }}</span>
+                                </div>
+                                <div v-if="item.deadline && item.deadline !== '以官方公告为准'" class="flex items-start">
+                                    <span class="text-slate-400 w-16 shrink-0">申报期限:</span>
+                                    <span class="text-red-600 font-semibold">{{ item.deadline }}</span>
+                                </div>
+                                <div v-if="item.amount_or_quota" class="flex items-start">
+                                    <span class="text-slate-400 w-16 shrink-0">房源/额度:</span>
+                                    <span class="text-orange-600 font-semibold">{{ item.amount_or_quota }}</span>
+                                </div>
+                                <div v-if="item.age_limit" class="flex items-start">
+                                    <span class="text-slate-400 w-16 shrink-0">年龄要求:</span>
+                                    <span class="text-slate-700">{{ item.age_limit }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 底部直达按钮 -->
+                        <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+                            <span class="text-xs text-slate-400">已通过校验</span>
+                            <a :href="item.url" target="_blank" class="inline-flex items-center text-xs font-semibold text-blue-600 hover:text-blue-800 transition">
+                                申报入口 / 查看原文 &rarr;
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: 个人订阅与推送 -->
+            <section v-if="currentTab === 'config'" class="max-w-2xl mx-auto bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="mb-6">
+                    <h2 class="text-lg font-bold text-slate-900">🔔 订阅与通知配置</h2>
+                    <p class="text-sm text-slate-500">配置你的接收邮箱或微信，当关注的城市有新政策时第一时间送达！</p>
+                </div>
+
+                <div class="space-y-6">
+                    <!-- 邮件配置 -->
+                    <div class="border border-slate-200 rounded-xl p-5 bg-slate-50/50">
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="font-semibold text-sm text-slate-800">📧 邮件通知 (SMTP)</span>
+                            <span class="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-medium">推荐 QQ / 163 邮箱</span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-slate-500 mb-1">发信 SMTP 服务器</label>
+                                <input v-model="userConfig.notifications.email.smtp_host" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-500 mb-1">SMTP 端口 (SSL)</label>
+                                <input v-model="userConfig.notifications.email.smtp_port" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-500 mb-1">发信邮箱账号</label>
+                                <input v-model="userConfig.notifications.email.username" placeholder="xxx@qq.com" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-500 mb-1">邮箱授权码 / 密码</label>
+                                <input v-model="userConfig.notifications.email.password" type="password" placeholder="邮箱设置里生成的授权码" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs text-slate-500 mb-1">接收提醒的邮箱地址</label>
+                                <input v-model="emailTo" placeholder="your_email@domain.com" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                            </div>
+                        </div>
+
+                        <div class="mt-4 flex justify-end">
+                            <button @click="testEmail" :disabled="testingEmail" class="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition">
+                                {{ testingEmail ? '正在发送测试邮件...' : '🚀 发送测试邮件' }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 保存按钮 -->
+                    <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                        <button @click="saveConfig" class="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition">
+                            💾 保存配置
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: 规则实验室 (Playground) -->
+            <section v-if="currentTab === 'playground'" class="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="mb-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900">🧪 声明式爬虫在线实验室</h2>
+                        <p class="text-sm text-slate-500">输入任意位置，系统<b>自动搜寻并弹出 3 个官方专区链接</b>，点击即可一键选用并测试！</p>
+                    </div>
+
+                    <!-- 热门区县快捷切换 -->
+                    <div class="flex flex-wrap items-center gap-1.5 bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                        <span class="text-slate-400 font-semibold mr-1">⚡️ 热门位置:</span>
+                        <button v-for="r in ['郑州', '深圳', '杭州', '武汉', '厦门', '北京', '成都', '南京', '西安', '长沙']" :key="r" @click="playground.city = r; fetchCandidates(r)" :class="playground.city === r ? 'bg-blue-600 text-white font-semibold' : 'bg-white text-slate-700 hover:bg-blue-50'" class="px-2.5 py-1 border border-slate-200 rounded-lg font-medium transition">
+                            {{ r }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 🌟 智能探查到的 3 个官方候选链接卡片 -->
+                <div class="mb-6 bg-gradient-to-r from-blue-50/70 to-indigo-50/70 p-4 rounded-xl border border-blue-100">
+                    <div class="flex items-center justify-between mb-2.5">
+                        <span class="text-xs font-bold text-blue-900 flex items-center">
+                            🔍 系统已自动为【{{ playground.city || '目标区域' }}】探查官方数据源 (点击卡片秒级选用)：
+                        </span>
+                        <span v-if="candidateSources.length > 0 && candidateSources[0].url" class="text-[11px] text-blue-600 bg-white px-2 py-0.5 rounded-full border border-blue-100 font-medium">推荐官方渠道</span>
+                        <span v-else class="text-[11px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 font-medium">⚠️ 暂未收录</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div v-for="(cand, idx) in candidateSources" :key="idx"
+                             @click="cand.url ? selectCandidate(cand) : null"
+                             :class="cand.url ? 'hover:border-blue-500 hover:shadow-md cursor-pointer' : 'opacity-60 cursor-not-allowed'"
+                             class="bg-white p-3 rounded-lg border border-slate-200/80 transition flex flex-col justify-between group">
+                            <div>
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span :class="cand.url ? 'text-blue-600 bg-blue-50' : 'text-amber-600 bg-amber-50'" class="text-[11px] font-bold px-1.5 py-0.5 rounded">{{ cand.tag }}</span>
+                                    <span v-if="cand.url" class="text-[10px] text-slate-400 group-hover:text-blue-600 font-medium font-mono">点击选用 &rarr;</span>
+                                    <span v-else class="text-[10px] text-amber-500 font-medium">需手动填入 URL</span>
+                                </div>
+                                <div class="text-xs font-bold text-slate-800 line-clamp-1 mb-1">{{ cand.title }}</div>
+                                <div class="text-[11px] text-slate-500 line-clamp-2 leading-relaxed mb-2">{{ cand.desc }}</div>
+                            </div>
+                            <div v-if="cand.url" class="text-[10px] text-slate-400 font-mono truncate border-t border-slate-100 pt-1.5">
+                                🌐 {{ cand.url }}
+                            </div>
+                            <div v-else class="text-[10px] text-amber-500 border-t border-amber-100 pt-1.5">
+                                ⚠️ 请在下方表单中手动填入该城市的官方公告页 URL
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- 左侧：输入表单 -->
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">目标政务网公告列表 URL</label>
+                            <input v-model="playground.url" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">所属城市 / 区县 (支持实时检索官方源)</label>
+                                <input v-model="playground.city" @input="fetchCandidates(playground.city)" placeholder="如: 北京亦庄、上海杨浦、杭州余杭" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">发布机构名称</label>
+                                <input v-model="playground.source_name" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">列表项容器选择器 (list_item)</label>
+                            <input v-model="playground.list_item" placeholder="如: ul.news_list li" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono">
+                        </div>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">标题 (title)</label>
+                                <input v-model="playground.title" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">链接 (link)</label>
+                                <input v-model="playground.link" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">日期 (date)</label>
+                                <input v-model="playground.date" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono">
+                            </div>
+                        </div>
+                        <button @click="testRule" :disabled="testingRule" class="w-full py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition shadow-sm">
+                            {{ testingRule ? '正在在线解析网页...' : '⚡️ 运行在线提取测试' }}
+                        </button>
+                    </div>
+
+                    <!-- 右侧：实时预览输出 -->
+                    <div class="bg-slate-900 rounded-xl p-4 text-white overflow-hidden flex flex-col justify-between">
+                        <div>
+                            <div class="flex justify-between items-center pb-2 border-b border-slate-800 mb-3 text-xs text-slate-400">
+                                <span>实时提取预览 (JSON/Cards)</span>
+                                <span>提取到: <b>{{ playgroundResult.total_matched || 0 }}</b> 条</span>
+                            </div>
+                            <div class="overflow-y-auto max-h-72 space-y-2 text-xs font-mono">
+                                <div v-if="!playgroundResult.samples" class="text-slate-500 text-center py-10">
+                                    点击左侧预设或填入选择器后，点击“运行在线提取测试”
+                                </div>
+                                <div v-for="(sample, idx) in playgroundResult.samples" :key="idx" class="p-2.5 bg-slate-800 rounded border border-slate-700">
+                                    <div class="text-emerald-400 font-semibold">#{{ idx+1 }} {{ sample.title }}</div>
+                                    <div class="text-slate-400 text-[11px] mt-1 truncate">🔗 {{ sample.url }}</div>
+                                    <div class="text-blue-300 text-[11px]">👥 门槛: {{ sample.target_audience }} | 📅 {{ sample.publish_date }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 提取成功后的一键保存并开启监控按钮 -->
+                        <div v-if="playgroundResult.samples && playgroundResult.samples.length > 0" class="pt-3 border-t border-slate-800 mt-2">
+                            <button @click="saveAndStartMonitor" :disabled="savingRule" class="w-full py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition flex items-center justify-center gap-1.5">
+                                <span>💾 一键将【{{ playground.city }}】保存至监控规则库并立即抓取入库</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: 运行状态 -->
+            <section v-if="currentTab === 'status'" class="space-y-6">
+
+                <!-- 概览卡片 -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <div class="text-xs text-slate-500 mb-1">累计收录政策</div>
+                        <div class="text-2xl font-bold text-slate-900">{{ stats.total_policies }}</div>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <div class="text-xs text-slate-500 mb-1">已成功推送</div>
+                        <div class="text-2xl font-bold text-emerald-600">{{ stats.sent }}</div>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <div class="text-xs text-slate-500 mb-1">待推送 / 重试中</div>
+                        <div class="text-2xl font-bold" :class="stats.pending ? 'text-blue-600' : 'text-slate-400'">{{ stats.pending }}</div>
+                    </div>
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <div class="text-xs text-slate-500 mb-1">冷启动基线</div>
+                        <div class="text-2xl font-bold text-slate-400">{{ stats.baseline }}</div>
+                    </div>
+                </div>
+
+                <!-- 推送通道状态 -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 class="text-base font-bold text-slate-900 mb-3">📮 推送通道</h3>
+                    <div v-if="stats.active_channels && stats.active_channels.length" class="flex flex-wrap gap-2">
+                        <span v-for="c in stats.active_channels" :key="c" class="px-3 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-100">
+                            ✅ {{ c }}
+                        </span>
+                    </div>
+                    <div v-else class="p-4 bg-red-50 border border-red-100 rounded-lg text-sm text-red-700">
+                        ❌ 当前没有任何可用的推送通道 —— 即使抓到政策也发不出去。
+                        请前往「🔔 个人订阅与推送」填写邮箱并发送测试邮件。
+                    </div>
+                </div>
+
+                <!-- 待推送队列 -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-base font-bold text-slate-900">⏳ 待推送队列</h3>
+                        <button v-if="pendingItems.length" @click="dispatchPending"
+                                class="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+                            立即推送这 {{ pendingItems.length }} 条
+                        </button>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-3">
+                        这里的政策已入库但尚未成功送达（含上轮推送失败正在重试的）。它们不会丢失，下轮运行会自动补发。
+                    </p>
+                    <div v-if="!pendingItems.length" class="text-sm text-slate-400 py-6 text-center">
+                        队列为空，所有政策都已成功送达 🎉
+                    </div>
+                    <div v-else class="space-y-2 max-h-72 overflow-y-auto">
+                        <div v-for="(it, i) in pendingItems" :key="i" class="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                            <div class="text-sm font-medium text-slate-800">{{ it.title }}</div>
+                            <div class="text-xs text-slate-500 mt-1">
+                                📍 {{ it.city }} · {{ it.source_name }}
+                                <span v-if="it.publish_date"> | 📅 {{ it.publish_date }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 数据源健康 -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-base font-bold text-slate-900">🩺 数据源健康状况</h3>
+                        <button @click="fetchHealth" class="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition">刷新</button>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-3">
+                        "能打开但抓到 0 条"通常意味着官网改版导致选择器失效 —— 这是最隐蔽的失效方式，
+                        它会让你在毫无察觉的情况下彻底断更。
+                    </p>
+                    <div v-if="!health.length" class="text-sm text-slate-400 py-6 text-center">
+                        暂无采集记录，先执行一次扫描吧。
+                    </div>
+                    <div v-else class="space-y-2 max-h-96 overflow-y-auto">
+                        <div v-for="(h, i) in health" :key="i"
+                             class="p-3 rounded-lg border flex items-start justify-between gap-3"
+                             :class="h.is_broken ? 'bg-red-50 border-red-100' : (h.consecutive_failures ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100')">
+                            <div class="min-w-0">
+                                <div class="text-sm font-medium text-slate-800 truncate">
+                                    {{ h.is_broken ? '❌' : (h.consecutive_failures ? '⚠️' : '✅') }}
+                                    [{{ h.city }}] {{ h.source_name }}
+                                </div>
+                                <div class="text-xs text-slate-500 mt-1">
+                                    最近状态: {{ h.last_status }} | 抓取条目: {{ h.last_items_found }}
+                                    <span v-if="h.last_success_at"> | 最后成功: {{ h.last_success_at }}</span>
+                                </div>
+                                <div v-if="h.last_error" class="text-xs text-red-500 mt-1 truncate">{{ h.last_error }}</div>
+                            </div>
+                            <span v-if="h.consecutive_failures" class="shrink-0 px-2 py-1 text-xs font-semibold rounded"
+                                  :class="h.is_broken ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'">
+                                连续失败 {{ h.consecutive_failures }} 次
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Vue App 脚本 -->
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    currentTab: 'feed',
+                    cities: ['全部', '深圳', '杭州'],
+                    selectedCity: '全部',
+                    selectedCategory: 'all',
+                    searchQuery: '',
+                    loading: false,
+                    isScanning: false,
+                    testingEmail: false,
+                    testingRule: false,
+                    stats: { total_policies: 0, active_cities: 0, pending: 0, sent: 0, baseline: 0,
+                             total_rules: 0, broken_sources: 0, active_channels: [], baseline_established: false },
+                    policies: [],
+                    health: [],
+                    pendingItems: [],
+                    savingRule: false,
+                    candidateSources: [],
+                    userConfig: {
+                        notifications: {
+                            email: { smtp_host: 'smtp.qq.com', smtp_port: 465, username: '', password: '', to_addrs: [] }
+                        }
+                    },
+                    emailTo: '',
+                    playground: {
+                        url: '',
+                        city: '',
+                        source_name: '',
+                        category: 'housing',
+                        list_item: 'ul li, div.news_list li',
+                        title: 'a',
+                        link: 'a',
+                        date: 'span'
+                    },
+                    playgroundResult: {}
+                }
+            },
+            mounted() {
+                // 每个请求独立容错，任何一个失败都不影响其余面板加载
+                this.fetchCities();
+                this.fetchStats();
+                this.fetchPolicies();
+                this.loadConfig();
+                this.fetchHealth();
+                this.fetchPending();
+            },
+            methods: {
+                // v1 的 mounted() 调用了这个方法但从未定义，导致抛出 TypeError，
+                // 后续的 fetchStats / fetchPolicies / loadConfig 全部不再执行，整个看板一片空白。
+                async fetchCities() {
+                    try {
+                        const res = await fetch('/api/cities');
+                        const data = await res.json();
+                        if (Array.isArray(data) && data.length) this.cities = data;
+                    } catch(e) { console.error('获取城市列表失败:', e); }
+                },
+                async fetchHealth() {
+                    try {
+                        const res = await fetch('/api/health');
+                        const data = await res.json();
+                        this.health = data.data || [];
+                    } catch(e) { console.error('获取健康状况失败:', e); }
+                },
+                async fetchPending() {
+                    try {
+                        const res = await fetch('/api/pending');
+                        const data = await res.json();
+                        this.pendingItems = data.data || [];
+                    } catch(e) { console.error('获取待推送队列失败:', e); }
+                },
+                async dispatchPending() {
+                    if (!confirm('将立即把待推送队列中的政策通过已配置的通道发送出去，确认继续？')) return;
+                    try {
+                        const res = await fetch('/api/dispatch_pending', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok) {
+                            alert('✅ 推送指令已执行，请查收。');
+                            await this.fetchStats(); await this.fetchPending();
+                        } else {
+                            alert('❌ ' + (data.detail || '推送失败'));
+                        }
+                    } catch(e) { alert('请求失败: ' + e); }
+                },
+                async fetchCandidates(region, autoSelect = true) {
+                    const target = (region || '').trim();
+                    if (!target) return;
+                    // 简单防抖：清除上一次定时器
+                    if (this._candidateTimer) clearTimeout(this._candidateTimer);
+                    this._candidateTimer = setTimeout(async () => {
+                        try {
+                            const res = await fetch('/api/search_gov_sources?query=' + encodeURIComponent(target));
+                            const data = await res.json();
+                            if (data && data.candidates && data.candidates.length) {
+                                this.candidateSources = data.candidates;
+                                if (autoSelect) {
+                                    // 仅当第一个候选有真实 URL 时自动填入
+                                    const first = data.candidates[0];
+                                    if (first.url) {
+                                        this.playground.url = first.url;
+                                        this.playground.source_name = first.source_name || first.title;
+                                        this.playground.category = first.type || 'housing';
+                                        this.playground.list_item = first.list_item || 'ul li, div.news_list li';
+                                        this.playground.title = 'a';
+                                        this.playground.link = 'a';
+                                        this.playground.date = 'span';
+                                    }
+                                }
+                            }
+                        } catch(e) {
+                            console.error('获取候选数据源失败:', e);
+                        }
+                    }, 400);
+                },
+                selectCandidate(cand) {
+                    if (!cand.url) return; // 空 URL (未收录城市) 不允许选择
+                    this.playground.url = cand.url;
+                    this.playground.source_name = cand.source_name || cand.title;
+                    this.playground.category = cand.type || 'housing';
+                    this.playground.list_item = cand.list_item || 'ul li, div.news_list li';
+                    this.playground.title = 'a';
+                    this.playground.link = 'a';
+                    this.playground.date = 'span';
+                    // 自动触发在线提取测试
+                    this.testRule();
+                },
+                async loadPreset(region) {
+                    if (!region) return;
+                    this.playground.city = region;
+                    await this.fetchCandidates(region, true);
+                    this.testRule();
+                },
+                async fetchStats() {
+                    try {
+                        const res = await fetch('/api/stats');
+                        this.stats = await res.json();
+                    } catch(e) {}
+                },
+                async fetchPolicies() {
+                    this.loading = true;
+                    try {
+                        let url = `/api/policies?city=${encodeURIComponent(this.selectedCity)}&category=${this.selectedCategory}`;
+                        if (this.searchQuery) url += `&q=${encodeURIComponent(this.searchQuery)}`;
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        this.policies = data.data || [];
+                    } catch(e) {
+                        console.error(e);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                async triggerScan() {
+                    this.isScanning = true;
+                    try {
+                        await fetch('/api/trigger_scan', { method: 'POST' });
+                        setTimeout(() => {
+                            this.fetchStats();
+                            this.fetchPolicies();
+                            this.isScanning = false;
+                        }, 2500);
+                    } catch(e) {
+                        this.isScanning = false;
+                    }
+                },
+                async saveAndStartMonitor() {
+                    this.savingRule = true;
+                    try {
+                        const res = await fetch('/api/save_rule', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.playground)
+                        });
+                        const data = await res.json();
+                        alert('🎉 成功将【' + this.playground.city + '】加入监控库！后台正在抓取入库...');
+                        setTimeout(() => {
+                            this.fetchStats();
+                            this.fetchCities();
+                            this.fetchPolicies();
+                            this.currentTab = 'feed';
+                            this.selectedCity = this.playground.city;
+                        }, 2000);
+                    } catch(e) {
+                        alert('保存失败: ' + e);
+                    } finally {
+                        this.savingRule = false;
+                    }
+                },
+                async triggerScanTarget(cityName) {
+                    this.isScanning = true;
+                    const cleanCity = (cityName || '全国').trim();
+                    try {
+                        const res = await fetch(`/api/trigger_scan?city=${encodeURIComponent(cleanCity)}`, { method: 'POST' });
+                        const data = await res.json();
+                        // 稍作等待等待后台抓取完成
+                        setTimeout(async () => {
+                            await this.fetchStats();
+                            await this.fetchPolicies();
+                            this.isScanning = false;
+                            if (this.policies.length > 0) {
+                                alert(`🎉 成功为您发现并更新了【${cleanCity}】相关的人才公寓与政策！`);
+                            } else {
+                                if (confirm(`ℹ️ 已完成对【${cleanCity}】的数据探查。当前规则库暂未收录该专属区县的独立数据源。\n\n是否立即前往【🧪 规则实验室】一键加载该区域的官方预设并开启监控？`)) {
+                                    this.currentTab = 'playground';
+                                    await this.loadPreset(cleanCity);
+                                }
+                            }
+                        }, 2000);
+                    } catch(e) {
+                        this.isScanning = false;
+                        alert('扫描请求异常: ' + e);
+                    }
+                },
+                async loadConfig() {
+                    try {
+                        const res = await fetch('/api/config');
+                        const data = await res.json();
+                        if (data.notifications) {
+                            this.userConfig = data;
+                            if (data.notifications.email && data.notifications.email.to_addrs) {
+                                this.emailTo = data.notifications.email.to_addrs.join(', ');
+                            }
+                        }
+                    } catch(e) {}
+                },
+                async saveConfig() {
+                    try {
+                        this.userConfig.notifications.email.to_addrs = this.emailTo.split(',').map(s => s.trim()).filter(Boolean);
+                        const res = await fetch('/api/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.userConfig)
+                        });
+                        alert('✅ 配置保存成功！');
+                    } catch(e) {
+                        alert('保存失败: ' + e);
+                    }
+                },
+                async testEmail() {
+                    this.testingEmail = true;
+                    try {
+                        this.userConfig.notifications.email.to_addrs = this.emailTo.split(',').map(s => s.trim()).filter(Boolean);
+                        const res = await fetch('/api/test_notify', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                channel: 'email',
+                                email_config: this.userConfig.notifications.email
+                            })
+                        });
+                        const data = await res.json();
+                        if (res.ok) alert('🎉 ' + data.message);
+                        else alert('❌ ' + data.detail);
+                    } catch(e) {
+                        alert('请求失败: ' + e);
+                    } finally {
+                        this.testingEmail = false;
+                    }
+                },
+                async testRule() {
+                    this.testingRule = true;
+                    try {
+                        const res = await fetch('/api/test_rule', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.playground)
+                        });
+                        this.playgroundResult = await res.json();
+                    } catch(e) {
+                        alert('提取失败: ' + e);
+                    } finally {
+                        this.testingRule = false;
+                    }
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
