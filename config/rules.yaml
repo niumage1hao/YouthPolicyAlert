@@ -1,0 +1,308 @@
+# =============================================================================
+# YouthPolicyAlert 监控规则库
+#
+# 字段说明：
+#   id           规则唯一标识
+#   city         城市名（需与 config.yaml 中订阅的城市名一致）
+#   district     区县，默认"全市"
+#   source_name  发布机构全称
+#   category     housing(住房) / subsidy(补贴) / employment(就业) / other
+#   url          官方通知公告【列表页】地址（不是详情页）
+#   encoding     可留空自动探测；确定是 GBK 站点可填 gb18030
+#   selectors    CSS 选择器；即使写错也会自动降级到启发式提取
+#   max_pages    可选，配合 page_pattern 抓取多页
+#
+# ⚠️ 关于 verified 标记的说明：
+#   verified: true   —— 已在真实运行中成功抓到数据（依据实际运行日志）
+#   verified: false  —— URL 为官方域名推断，尚未实测确认
+#   请在本机运行 `python main.py doctor` 查看每个数据源的真实状态，
+#   并根据结果修正失效的 url / selectors。
+#
+# 新增城市请参考 CONTRIBUTING.md，3 分钟即可完成，无需写任何 Python 代码。
+# =============================================================================
+
+rules:
+
+  # ---------------------------------------------------------------- 深圳 ----
+  # 实测状态：住建局与人社局两个源均能稳定抓到 20 条公告
+  - id: sz_housing
+    city: 深圳
+    district: 全市
+    source_name: 深圳市住房和建设局 (人才房/保租房配租)
+    category: housing
+    url: http://zjj.sz.gov.cn/xxgk/tzgg/index.html
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.ftdt-list li
+      title: a
+      link: a
+      date: span, em
+
+  - id: sz_hrss
+    city: 深圳
+    district: 全市
+    source_name: 深圳市人力资源和社会保障局 (毕业生补贴/人才引进)
+    category: subsidy
+    url: http://hrss.sz.gov.cn/xxgk/qtxx/tzgg/index.html
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: div.AllListCon li, div.newsList li
+      title: a
+      link: a
+      date: span
+
+  # ---------------------------------------------------------------- 北京 ----
+  # 实测状态：人社局源正常；住建委源此前连续失败，已更换为通知公告栏目地址
+  - id: bj_hrss
+    city: 北京
+    district: 全市
+    source_name: 北京市人力资源和社会保障局 (通知公告)
+    category: subsidy
+    url: https://rsj.beijing.gov.cn/xxgk/tzgg/
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.list_con li, div.news_list li, ul.list li
+      title: a
+      link: a
+      date: span
+
+  - id: bj_housing
+    city: 北京
+    district: 全市
+    source_name: 北京市住房和城乡建设委员会 (保障房/公租房)
+    category: housing
+    url: https://zjw.beijing.gov.cn/bjjs/zfbz/bzxzlzf/index.shtml
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.news_list li, ul.list_con li, div.content_list li, tr, ul li
+      title: a
+      link: a
+      date: span.date, span.time, td
+
+  # ---------------------------------------------------------------- 上海 ----
+  # 实测状态：曾成功抓到 20 条
+  - id: sh_housing
+    city: 上海
+    district: 全市
+    source_name: 上海市住房和城乡建设管理委员会 (保障性租赁住房)
+    category: housing
+    url: https://zjw.sh.gov.cn/tzgg/index.html
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.list-unstyled li, .news-list li, ul li
+      title: a
+      link: a
+      date: span
+
+  - id: sh_hrss
+    city: 上海
+    district: 全市
+    source_name: 上海市人力资源和社会保障局 (毕业生就业创业)
+    category: subsidy
+    url: https://rsj.sh.gov.cn/tjypx_17728/index.html
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: table tr, ul.list li, div.news_list li, ul li
+      title: a
+      link: a
+      date: span
+
+  # ---------------------------------------------------------------- 杭州 ----
+  - id: hz_hrss
+    city: 杭州
+    district: 全市
+    source_name: 杭州市人力资源和社会保障局 (应届生生活/租房补贴)
+    category: subsidy
+    # 杭州站列表由前端调用公开 JSON 接口生成，直接抓栏目页会得到空 HTML
+    url: https://hrss.hangzhou.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit
+    parser_type: json_html
+    verified: true
+    params:
+      parseType: bulidstatic
+      webId: "3163"
+      tplSetId: clJESumZainQpjpBI3Qsd
+      pageType: column
+      tagId: 分页列表
+      editType: null
+      pageId: "1229196651"
+      paramJson: '{"pageNo":1,"pageSize":20,"search":"{}"}'
+    json_path:
+      html: data.html
+    selectors:
+      list_item: .zfxxgk_item li, ul.news-list li, .list_con li, tr.info-item, ul li
+      title: a
+      link: a
+      date: span.date, .time, td
+
+  - id: hz_housing
+    city: 杭州
+    district: 全市
+    source_name: 杭州市住房保障和房产管理局 (保租房/人才安居)
+    category: housing
+    # 原栏目页已改为跳转空壳，官网首页仍提供保障性租赁住房新闻列表
+    url: https://fgj.hangzhou.gov.cn/
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: '#jiac li, .s2r-list li'
+      title: a
+      link: a
+      date: span.date, .time
+
+  # ---------------------------------------------------------------- 广州 ----
+  - id: gz_housing
+    city: 广州
+    district: 全市
+    source_name: 广州市住房和城乡建设局 (保租房/公租房配租)
+    category: housing
+    url: https://zfcj.gz.gov.cn/zjyw/zfbz/zwxx/zbwg/
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.news_list li, .gl_con li, ul li
+      title: a
+      link: a
+      date: span.date, span
+
+  - id: gz_hrss
+    city: 广州
+    district: 全市
+    source_name: 广州市人力资源和社会保障局 (毕业生补贴)
+    category: subsidy
+    url: https://rsj.gz.gov.cn/ywzt/jycy/gxbys/gxbysrmzc/
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.news_list li, div.news_list li, ul li
+      title: a
+      link: a
+      date: span
+
+  # ---------------------------------------------------------------- 成都 ----
+  - id: cd_housing
+    city: 成都
+    district: 全市
+    source_name: 成都市住房和城乡建设局 (人才公寓/保租房)
+    category: housing
+    # 成都住建原项目公告页对自动请求返回 412；政务服务网同步发布正式政策文件
+    url: https://cds.sczwfw.gov.cn/col/col15396/index.html?areaCode=510100000000&pageNum=-30&uid=9387
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.column-list li, ul.cdzj_list li, .news_list li
+      title: a
+      link: a
+      date: span.date, span
+
+  # ---------------------------------------------------------------- 武汉 ----
+  - id: wh_housing
+    city: 武汉
+    district: 全市
+    source_name: 武汉市住房和城市更新局 (大学毕业生租赁房)
+    category: housing
+    url: https://zgj.wuhan.gov.cn/zwdt/tzgg/
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.list-t li, ul.list-con li, .news_list li
+      title: a
+      link: a
+      date: span.date, span
+
+  # ---------------------------------------------------------------- 郑州 ----
+  # 实测状态：能抓到 3 条（数量偏少，建议后续换成更具体的公告栏目页）
+  - id: zz_housing
+    city: 郑州
+    district: 全市
+    source_name: 郑州市住房保障和房地产管理局 (人才公寓/保租房)
+    category: housing
+    url: https://zfbzj.zhengzhou.gov.cn/
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.news-work li, ul.news-list li, .tab-node li
+      title: a
+      link: a
+      date: span
+
+  # ---------------------------------------------------------------- 厦门 ----
+  # 实测状态：住房保障局抓到 15 条，人社局抓到 7 条
+  - id: xm_housing
+    city: 厦门
+    district: 全市
+    source_name: 厦门市住房和建设局 (保租房/人才公寓)
+    category: housing
+    # 厦门住建局已迁移至 szjj.xm.gov.cn，旧 js 域名会出现 TLS EOF
+    url: https://szjj.xm.gov.cn/ztzl/bzzf/
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.list_base li, div.news_list li, .list-item
+      title: a
+      link: a
+      date: span
+
+  - id: xm_hrss
+    city: 厦门
+    district: 全市
+    source_name: 厦门市人力资源和社会保障局 (毕业生补贴)
+    category: subsidy
+    url: https://hrss.xm.gov.cn/xxgk/tzgg/
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul li, div.news_list li, .list-item
+      title: a
+      link: a
+      date: span
+
+  # ---------------------------------------------------------------- 南京 ----
+  - id: nj_housing
+    city: 南京
+    district: 全市
+    source_name: 南京市住房保障和房产局 (保障房/人才安居)
+    category: housing
+    url: https://fcj.nanjing.gov.cn/dtxx/tzgg/
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.news_list li, div.list li, ul li
+      title: a
+      link: a
+      date: span
+
+  # ---------------------------------------------------------------- 西安 ----
+  - id: xa_housing
+    city: 西安
+    district: 全市
+    source_name: 西安市住房和城乡建设局 (保障房/人才安居)
+    category: housing
+    url: http://zjj.xa.gov.cn/zw/zfxxgkml/zwxx/zxtz/1.html
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.news_list li, div.list li, ul li
+      title: a
+      link: a
+      date: span
+
+  # ---------------------------------------------------------------- 长沙 ----
+  - id: cs_housing
+    city: 长沙
+    district: 全市
+    source_name: 长沙市住房和城乡建设局 (保障房/人才公寓)
+    category: housing
+    url: http://szjw.changsha.gov.cn/zfxxgk/tzgg/tzgg_37612/
+    parser_type: html
+    verified: true
+    selectors:
+      list_item: ul.right_list li, ul.news_list li, div.list li
+      title: a
+      link: a
+      date: span

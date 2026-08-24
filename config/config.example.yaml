@@ -1,0 +1,100 @@
+# =============================================================================
+# YouthPolicyAlert 配置文件范例
+# 使用方法：复制本文件为 config.yaml，按需修改
+#   cp config/config.example.yaml config/config.yaml
+#
+# 提示：在 GitHub Actions 上运行时，邮箱等敏感信息应通过 Secrets 注入，
+#       环境变量会自动覆盖本文件中的对应配置，无需把密码写进仓库。
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. 订阅哪些城市
+#    留空 cities 则监控 rules.yaml 中的全部城市
+# -----------------------------------------------------------------------------
+subscriptions:
+  cities:
+    - name: "深圳"
+      districts: ["全市"]
+      categories: ["housing", "subsidy"]
+    - name: "杭州"
+      districts: ["全市"]
+      categories: ["housing", "subsidy"]
+
+# -----------------------------------------------------------------------------
+# 2. 推送通道（至少配置一个，否则抓到政策也发不出去）
+# -----------------------------------------------------------------------------
+notifications:
+
+  # 邮件通知（最推荐，QQ/163 邮箱均可）
+  # 注意 password 填的是【SMTP 授权码】，不是邮箱登录密码！
+  # QQ邮箱获取方式：设置 → 账号 → 开启 POP3/SMTP 服务 → 生成授权码
+  email:
+    enabled: true
+    smtp_host: "smtp.qq.com"
+    smtp_port: 465
+    smtp_ssl: true
+    username: "your_email@qq.com"
+    password: "your_smtp_auth_code"
+    to_addrs:
+      - "your_email@qq.com"
+
+  # 微信推送（PushPlus，关注公众号即可在微信收到）
+  pushplus:
+    enabled: false
+    token: ""
+    topic: ""          # 群组推送时填写，个人推送留空
+
+  # 微信推送（Server酱 Turbo）
+  serverchan:
+    enabled: false
+    send_key: ""
+
+  # 飞书群机器人
+  feishu:
+    enabled: false
+    webhook_url: ""
+
+  # 企业微信群机器人
+  wecom:
+    enabled: false
+    webhook_url: ""
+
+  # 单次推送最多包含多少条政策，防止一封邮件塞几十条
+  max_items_per_push: 30
+  # 某个数据源连续失败多少次后，给你发一封"数据源失效"告警
+  health_alert_threshold: 3
+  # 告警冷却时间（小时），避免同样的问题反复轰炸
+  health_alert_cooldown_hours: 24
+
+# -----------------------------------------------------------------------------
+# 3. 抓取与过滤参数
+# -----------------------------------------------------------------------------
+crawler:
+  # --- 礼貌抓取：请勿把延时调得过低，避免给政务服务器造成压力 ---
+  min_delay: 1.0              # 同一网站两次请求的最小间隔（秒）
+  max_delay: 2.5              # 最大间隔（秒）
+  timeout: 20.0               # 单次请求超时
+  max_retries: 3              # 失败重试次数
+  max_workers: 5              # 并发抓取的数据源数量（同一网站仍串行）
+  verify_ssl: true            # 默认校验证书；仅对确有证书问题的站点显式关闭
+  enable_warmup: true         # 先访问站点首页拿 Cookie，显著降低被 WAF 拦截的概率
+  proxy: null                 # 如需代理：  "http://127.0.0.1:7890"
+
+  db_path: "data/policy.db"
+
+  # --- 详情页深度提取（v2 新增核心能力）---
+  # 开启后会对命中的政策额外抓一次正文，提取补贴金额、申报截止日期、学历门槛等关键信息
+  fetch_detail: true
+  max_detail_pages: 20        # 每轮最多抓多少个详情页（控制对政务服务器的压力）
+
+  # --- 过滤参数 ---
+  relevance_threshold: 2.5    # 相关性阈值：调低=推得更多但更杂，调高=更精准但可能漏
+  max_age_days: 45            # 只推送 N 天内发布的公告；设为 null 关闭时效过滤
+
+  # --- 冷启动保护（强烈建议保持 true）---
+  # 首次运行时，网站上现存的几百条历史公告只记录、不推送，
+  # 避免第一封邮件就塞满几年前的旧公告把你劝退。
+  cold_start_baseline: true
+
+  # 采集日志保留天数
+  log_retention_days: 30
