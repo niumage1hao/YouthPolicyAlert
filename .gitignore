@@ -1,0 +1,26 @@
+# 本地配置与凭据（永远不要提交）
+config/config.yaml
+.env
+.env.*
+!.env.example
+
+# 运行状态、数据库、日志与验收产物
+data/*.db
+data/*.db-*
+acceptance_output/
+*.log
+
+# Python 缓存与测试缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 本地备份、压缩包与个人分析文件
+_v1_backup/
+*.zip
+*.tar.gz
+YouthPolicyAlert_项目分析报告.docx

@@ -1,0 +1,24 @@
+# YouthPolicyAlert - 依赖清单
+
+# --- 核心：网络请求与解析 ---
+httpx>=0.27.0
+beautifulsoup4>=4.12.0
+lxml>=5.1.0
+charset-normalizer>=3.3.0
+
+# --- 核心：配置、数据模型与模板 ---
+pydantic>=2.7.0
+pyyaml>=6.0.1
+jinja2>=3.1.3
+
+# --- Web 可视化后台 (python web.py) ---
+# v1 遗漏了这两个依赖，导致用户按 README 装完依赖后启动后台直接报 ModuleNotFoundError
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
+# --- 可选：本地常驻定时运行 ---
+apscheduler>=3.10.4
+
+# --- 开发与测试 ---
+pytest>=8.0.0
+aiosmtpd>=1.4.4
