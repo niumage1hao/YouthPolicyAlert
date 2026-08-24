@@ -1,0 +1,155 @@
+name: Youth Policy Alert Monitor
+
+# ============================================================================
+# 关于去重数据库持久化的说明（v2 的关键修复）
+#
+# v1 用 actions/cache 保存 data/policy.db，且 cache key 里带了每次都不同的 run_id。
+# GitHub 官方明确声明 Actions Cache「不保证一定保留」（7 天未命中即被清理，
+# 仓库缓存总量超 10GB 也会被驱逐）。一旦缓存丢失，去重数据库归零，
+# 所有历史政策会被当成"新政策"再次批量推送 —— 直接违背项目"绝不重复推送"的核心承诺。
+#
+# v2 改为把数据库提交回一个独立的 orphan 分支 `policy-state`：
+#   - 免费、可靠、不依赖任何外部服务
+#   - 用 force push 覆盖，历史不累积，仓库不会膨胀
+#   - 与主分支代码完全隔离，不污染 git log
+# ============================================================================
+
+on:
+  schedule:
+    # 北京时间 08:30 / 12:30 / 18:30（UTC 需减 8 小时）
+    - cron: '30 0,4,10 * * *'
+  workflow_dispatch:
+    inputs:
+      city:
+        description: '只监控指定城市（留空则按配置监控全部）'
+        required: false
+        type: string
+      dry_run:
+        description: '试运行：只抓取打印，不写库不推送'
+        required: false
+        type: boolean
+        default: false
+
+# 需要写权限才能把去重数据库提交回 policy-state 分支
+permissions:
+  contents: write
+
+# 避免定时任务与手动触发同时运行导致数据库写冲突
+concurrency:
+  group: policy-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # --- 恢复去重数据库 -------------------------------------------------
+      - name: 恢复历史去重数据库
+        run: |
+          mkdir -p data
+          if git ls-remote --exit-code --heads origin policy-state >/dev/null 2>&1; then
+            echo "发现 policy-state 分支，正在恢复去重数据库..."
+            git fetch origin policy-state --depth=1
+            git checkout origin/policy-state -- data/policy.db 2>/dev/null || echo "分支内暂无数据库文件"
+          else
+            echo "尚未创建 policy-state 分支，本次将作为首次运行建立基线。"
+          fi
+
+          if [ -f data/policy.db ]; then
+            echo "✅ 已恢复数据库，大小: $(du -h data/policy.db | cut -f1)"
+          else
+            echo "ℹ️ 无历史数据库，首次运行将只建立基线、不推送历史公告。"
+          fi
+
+      # --- 执行监控 -------------------------------------------------------
+      - name: 执行监控与推送
+        id: run
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          SUBSCRIBE_CITIES: ${{ vars.SUBSCRIBE_CITIES }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+          CITY_INPUT: ${{ inputs.city }}
+        run: |
+          ARGS=(run)
+          if [ "$DRY_RUN_INPUT" = "true" ]; then
+            ARGS+=(--dry-run)
+          fi
+          if [ -n "$CITY_INPUT" ]; then
+            ARGS+=(--city "$CITY_INPUT")
+          fi
+          printf '执行:'
+          printf ' %q' python main.py "${ARGS[@]}"
+          printf '\n'
+          python main.py "${ARGS[@]}"
+
+      # --- 保存去重数据库 -------------------------------------------------
+      - name: 保存去重数据库到 policy-state 分支
+        # 即使推送步骤失败也要保存，避免下次重复推送已发现的政策
+        if: always() && inputs.dry_run != true
+        run: |
+          if [ ! -f data/policy.db ]; then
+            echo "没有数据库文件，跳过保存。"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 用 orphan 分支存放状态：每次覆盖，不累积历史，仓库不会膨胀
+          cp data/policy.db /tmp/policy.db
+          git checkout --orphan policy-state-tmp
+          git rm -rf --cached . >/dev/null 2>&1 || true
+
+          mkdir -p data
+          cp /tmp/policy.db data/policy.db
+
+          cat > README.md <<'EOF'
+          # policy-state 分支
+
+          本分支由 GitHub Actions 自动维护，仅用于持久化 YouthPolicyAlert 的
+          去重数据库 `data/policy.db`，**请勿手动修改或合并到主分支**。
+
+          它记录了"哪些政策已经推送过"，是保证不重复骚扰用户的唯一状态来源。
+          删除本分支会导致下次运行时重新建立基线（历史政策不会被补推）。
+          EOF
+
+          git add -f data/policy.db README.md
+          git commit -m "chore: 更新政策去重数据库 $(date -u '+%Y-%m-%d %H:%M UTC')" || {
+            echo "无变化，跳过提交。"; exit 0;
+          }
+          git push -f origin policy-state-tmp:policy-state
+          echo "✅ 去重数据库已保存到 policy-state 分支"
+
+      # --- 备份（便于排查问题）--------------------------------------------
+      - name: 上传运行产物备份
+        if: always() && inputs.dry_run != true
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-database-${{ github.run_number }}
+          path: data/policy.db
+          retention-days: 14
+          if-no-files-found: ignore
